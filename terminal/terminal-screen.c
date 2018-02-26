@@ -61,6 +61,8 @@
 /* offset of saturation random value */
 #define SATURATION_WINDOW 0.20
 
+/* taken from gnome-terminal (terminal-screen.c) */
+#define SPAWN_TIMEOUT (30 * 1000)
 
 enum
 {
@@ -153,6 +155,14 @@ static void       terminal_screen_urgent_bell                   (TerminalWidget 
                                                                  TerminalScreen        *screen);
 static void       terminal_screen_set_custom_command            (TerminalScreen        *screen,
                                                                  gchar                **command);
+/*
+#if VTE_CHECK_VERSION (0, 48, 0)
+void              spawn_async_result_cb                         (VteTerminal           *terminal,
+                                                                 GPid                   pid,
+                                                                 GError                *error,
+                                                                 gpointer               user_data);
+#endif
+*/
 
 
 
@@ -1673,6 +1683,32 @@ terminal_screen_set_custom_command (TerminalScreen *screen,
 
 
 
+#if VTE_CHECK_VERSION (0, 48, 0)
+static void
+terminal_screen_spawn_async_cb (VteTerminal *terminal,
+                                GPid         pid,
+                                GError      *error,
+                                gpointer     user_data)
+{
+  TerminalScreen *screen = TERMINAL_SCREEN (user_data);
+
+  terminal_return_if_fail (TERMINAL_IS_SCREEN (screen));
+  terminal_return_if_fail (VTE_IS_TERMINAL (screen->terminal));
+
+  if (error)
+    {
+      xfce_dialog_show_error (GTK_WINDOW (gtk_widget_get_toplevel (GTK_WIDGET (screen))),
+                              error,
+                              _("Failed to execute child"));
+      g_error_free (error);
+    }
+
+  return;
+}
+#endif
+
+
+
 /**
  * terminal_screen_new:
  * @attr    : Terminal attributes.
@@ -1755,6 +1791,17 @@ terminal_screen_launch_child (TerminalScreen *screen)
           spawn_flags |= G_SPAWN_FILE_AND_ARGV_ZERO;
         }
 
+#if VTE_CHECK_VERSION (0, 48, 0)
+      vte_terminal_spawn_async (VTE_TERMINAL (screen->terminal),
+                                pty_flags,
+                                screen->working_directory,
+                                argv2, env, spawn_flags,
+                                NULL, NULL,
+                                NULL, SPAWN_TIMEOUT,
+                                NULL,
+                                terminal_screen_spawn_async_cb,
+                                screen);
+#else
       if (!vte_terminal_spawn_sync (VTE_TERMINAL (screen->terminal),
                                            pty_flags,
                                            screen->working_directory, argv2, env,
@@ -1766,6 +1813,7 @@ terminal_screen_launch_child (TerminalScreen *screen)
                                   error, _("Failed to execute child"));
           g_error_free (error);
         }
+#endif
 
 #ifdef HAVE_LIBUTEMPTER
       g_object_get (G_OBJECT (screen->preferences), "command-update-records", &update_records, NULL);
@@ -2710,3 +2758,28 @@ terminal_screen_has_foreground_process (TerminalScreen *screen)
 
   return TRUE;
 }
+/*
+#if VTE_CHECK_VERSION (0, 48, 0)
+void
+spawn_async_result_cb (VteTerminal *terminal,
+                       GPid         pid,
+                       GError      *error,
+                       gpointer     user_data)
+{
+  TerminalScreen *screen = TERMINAL_SCREEN (user_data);
+
+  terminal_return_if_fail (TERMINAL_IS_SCREEN (screen));
+  terminal_return_if_fail (VTE_IS_TERMINAL (screen->terminal));
+
+  if (error)
+    {
+      xfce_dialog_show_error (GTK_WINDOW (gtk_widget_get_toplevel (GTK_WIDGET (screen))),
+                              error,
+                              _("Failed to execute child"));
+      g_error_free (error);
+    }
+
+  return;
+}
+#endif
+*/
